@@ -1,0 +1,9 @@
+pandas
+numpy
+jupyterlab
+chess
+matplotlib
+pytube
+opencv-python
+nb_black
+tqdm
