@@ -22,3 +22,8 @@ Eventually the project would produce an app that could be used in real time to t
 1. How the labels will look?
     - FEN
 2. Test out object detection
+
+
+## Reference:
+
+- https://github.com/Paethon/chess_image_dataset <- 3d image creation of chess boards?
