@@ -47,6 +47,8 @@ class VideoBoardExtractor:
 
     def load_videocap(self):
         self.vidcap = cv2.VideoCapture(self.video_fn)
+        self.frame_count = self.vidcap.get(cv2.CAP_PROP_FRAME_COUNT)
+        self.fps = self.vidcap.get(cv2.CAP_PROP_FPS)
 
     def process_video(self, stop_frame=-1):
         if self.vidcap is None:
@@ -54,6 +56,8 @@ class VideoBoardExtractor:
 
         success, image = self.vidcap.read()
         frame = 1
+        if stop_frame == -1 and self.frame_count > 0:
+            max_frame = self.frame_count
         pbar = tqdm(total=stop_frame)
         while success:
             success, image = self.vidcap.read()
