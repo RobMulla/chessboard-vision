@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 def get_uci(board1, board2, who_moved):
     """
     Reference: https://stackoverflow.com/questions/66770587/how-do-i-get-the-played-move-by-comparing-two-different-fens
@@ -26,21 +27,22 @@ def get_uci(board1, board2, who_moved):
                     move += str(nums.get(round(x / 2) + 1)) + str(9 - (i + 1))
     if flip:
         move = move[2] + move[3] + move[0] + move[1]
-        
+
     # Castling
-    if move == 'h1g1f1e1':
-        move = 'e1g1'
-    elif move == 'e8f8g8h8':
-        move = 'e8g8'
-    elif move == 'e1d1c1a1':
-        move = 'e1c1'
-    elif move == 'e8d8c8a8':
-        move = 'e8c8'
+    if move == "h1g1f1e1":
+        move = "e1g1"
+    elif move == "e8f8g8h8":
+        move = "e8g8"
+    elif move == "e1d1c1a1":
+        move = "e1c1"
+    elif move == "e8d8c8a8":
+        move = "e8c8"
 
     return move
 
 
 def get_fen_df(vbe, min_frames=5):
+
     fen_df = pd.DataFrame(vbe.fens.items(), columns=["frame", "fen"])
 
     fen_df["frame_count"] = fen_df["fen"].map(fen_df["fen"].value_counts().to_dict())

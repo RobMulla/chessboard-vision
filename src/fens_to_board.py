@@ -11,6 +11,7 @@ def flip_fen(fen):
     flipped_fen = " ".join(fields)
     return flipped_fen
 
+
 def fens_to_board(fen_df):
     # Determine if white or black is on top
     top_left_piece = fen_df["fen"].str[0].values[0]
@@ -49,9 +50,9 @@ def fens_to_board(fen_df):
                 move_count += 1
             except Exception as e:
                 print(f"failed move {move_count} with exception {e} frame {frame}")
-                print(f'Board before:\n{board}')
-                print(f'Board next:\n{new_board}')
-                print(f'Mode {move}')
+                print(f"Board before:\n{board}")
+                print(f"Board next:\n{new_board}")
+                print(f"Mode {move}")
                 return fen_df, board
         fen_df.loc[i, "confirmed_move"] = True
         fen_df.loc[i, "move_uci"] = move
