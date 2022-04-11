@@ -27,3 +27,13 @@ Eventually the project would produce an app that could be used in real time to t
 ## Reference:
 
 - https://github.com/Paethon/chess_image_dataset <- 3d image creation of chess boards?
+
+
+
+## TODO (March 22, 2022)
+
+1. Automatically identify X,Y limits of the GT board.
+2. Crop to the IRL board.
+
+
+## TODO (April 3, 2022)
