@@ -1,11 +1,25 @@
 import os
 import cv2
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 import sys
 
 sys.path.append("../tensorflow_chessbot/")
 from tensorflow_chessbot import ChessboardPredictor
+
+import subprocess
+from loguru import logger
+import shutil
+
+
+# def get_logger(level="debug"):
+#     FORMAT = "%(asctime)s %(clientip)-15s %(user)-8s %(message)s"
+#     logging.basicConfig(format=FORMAT)
+#     logger = logging.getLogger("chessboard-extractor")
+#     if level == "debug":
+#         logger.setLevel(logging.DEBUG)
+#     return logger
 
 
 def line_flattener(line):
@@ -27,7 +41,8 @@ class VideoBoardExtractor:
         store_irl_boards=False,
         store_irl_video=False,
         save_img_freq=False,
-        at_first_gt_frame=False,
+        at_first_gt_frame=True,
+        purge_output_dir=True,
         store_dir="../data/processed",
         predictor_model_file="../tensorflow_chessbot/saved_models/frozen_graph.pb",
     ):
@@ -56,10 +71,15 @@ class VideoBoardExtractor:
             save_img_freq (int or bool):
                 Will save the image of the video frame every `save_img_freq` to
                 the `img` data directory
+            at_first_gt_frame (bool, optional): If False will try to automatically
+                detect the first frame where there is a ground truth board.
+            purge_output_dir (bool, optional): If True will delete everything in the
+                output directory for the video.
             store_dir (str, optional): The location to store the outputs of
                 the processing. Will be placed in a subfolder with the video_id.
                 Defaults to "../data/processed".
         """
+        self.logger = logger
         self.video_fn = video_fn
         self.vidcap = None
         self.first_frame_img = None
@@ -91,15 +111,16 @@ class VideoBoardExtractor:
         self.store_irl_boards = store_irl_boards
         self.store_irl_video = store_irl_video
         self.save_img_freq = save_img_freq
-        if store_irl_boards or store_gt_boards or store_masks:
-            self.make_dirs()
+        if store_irl_boards or store_gt_boards or store_masks or store_irl_video:
+            self.make_dirs(purge_output_dir)
         if self.store_irl_video:
             VIDEO_CODEC = "MP4V"
             fps = 30
             irl_height = int(irl_board_loc[1] - irl_board_loc[0])
             irl_width = int(irl_board_loc[3] - irl_board_loc[2])
+            self.logger.info(f"IRL height: {irl_height} width: {irl_width}")
             self.irl_video = cv2.VideoWriter(
-                f"{self.full_store_dir}/irl/irl.mp4",
+                f"{self.full_store_dir}/irl/irl_temp.mp4",
                 cv2.VideoWriter_fourcc(*VIDEO_CODEC),
                 fps,
                 (irl_width, irl_height),
@@ -107,7 +128,12 @@ class VideoBoardExtractor:
         else:
             self.irl_video = None
 
+        self.logger.info(f"Created video extractor for {self.video_fn}")
+        self.logger.info(f"IRL Board Location: {irl_board_loc}")
+        self.logger.info(f"GT Board Location: {gt_board_loc}")
+
     def load_videocap(self):
+        self.logger.info("Loading video capture")
         self.vidcap = cv2.VideoCapture(self.video_fn)
         self.frame_count = self.vidcap.get(cv2.CAP_PROP_FRAME_COUNT)
         self.fps = self.vidcap.get(cv2.CAP_PROP_FPS)
@@ -117,9 +143,33 @@ class VideoBoardExtractor:
             img_fn = f"{self.full_store_dir}/imgs/{frame}.png"
             cv2.imwrite(img_fn, image)
 
+    def compress_irl_video(self):
+        self.logger.info("Compressing our output irl video")
+        tmp_output_path = f"{self.full_store_dir}/irl/irl_temp.mp4"
+        output_path = f"{self.full_store_dir}/irl/irl.mp4"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-i",
+                tmp_output_path,
+                "-crf",
+                "18",
+                "-preset",
+                "veryfast",
+                "-vcodec",
+                "libx264",
+                output_path,
+                # "-loglevel",
+                # "quiet",
+            ]
+        )
+        # os.remove(tmp_output_path)
+
     def process_video(
         self, start_frame=999_999, stop_frame=-1, stop_on_first_board=False
     ):
+        self.logger.info("Proccessing video capture")
+
         print(self.vidcap)
         if self.vidcap is None:
             self.vidcap = self.load_videocap()
@@ -139,6 +189,8 @@ class VideoBoardExtractor:
                 self.save_video_img(frame, image)
 
             success, image = self.vidcap.read()
+            if success is False:
+                break
             if frame < start_frame:
                 pbar.update(1)
                 frame += 1
@@ -149,22 +201,27 @@ class VideoBoardExtractor:
                 if self.irl_video is not None:
                     self.irl_video.release()
                 pbar.close()
-                return
+                break
             # if succ is False:
             #     # No FEX extracted, stop running
             #     self.vidcap.release()
             #     return
             if frame == max_frame:
-                self.vidcap.release()
-                if self.irl_video is not None:
-                    self.irl_video.release()
-                return
+                # self.vidcap.release()
+                # if self.irl_video is not None:
+                #     self.irl_video.release()
+                break
             frame += 1
             pbar.update(1)
         pbar.close()
         self.vidcap.release()
+        if self.store_irl_video:
+            self.irl_video.release()
+            self.compress_irl_video()
 
     def get_average_color(self, img, frame):
+        self.logger.info("Getting the average color of frame")
+
         average = img.mean(axis=0).mean(axis=0)
 
         self.avg_frame_color[frame] = average
@@ -179,6 +236,12 @@ class VideoBoardExtractor:
             # print(f'AGHHHH - FRAME {frame}')
         self.last_frame_color = np.mean(average)
 
+    def save_fen_csv(self):
+        pd.Series(self.fens).to_frame("fen").reset_index().rename(
+            columns={"index": "frame"}
+        ).to_csv(f"{self.full_store_dir}/fen.csv")
+
+    @logger.catch
     def extract_fen(self, gt_board, frame):
         try:
             results = self.fen_predictor.makePrediction(gt_board)
@@ -193,11 +256,15 @@ class VideoBoardExtractor:
             else:
                 changed = False
             self.last_fen = flat_fen
-        except:
+            self.save_fen_csv()
+        except Exception as e:
+            logger.warning("Could not detect the FEN at this frame")
+            logger.warning(f"Exception thrown {e}")
             return False, True
         return True, changed
 
-    def make_dirs(self):
+    def make_dirs(self, purge_output_dir):
+        self.logger.info("Making storage directories")
         dirs_to_make = []
         dirs_to_make.append(f"{self.full_store_dir}/gt/")
         dirs_to_make.append(f"{self.full_store_dir}/irl/")
@@ -205,13 +272,16 @@ class VideoBoardExtractor:
         dirs_to_make.append(f"{self.full_store_dir}/imgs/")
 
         for d in dirs_to_make:
+            if os.path.exists(d) and purge_output_dir:
+                shutil.rmtree(d)
             if not os.path.exists(d):
                 os.makedirs(d)
 
     def process_frame(self, image, frame):
         if frame == 1:
             self.first_frame_img = image.copy()
-        self.get_average_color(image, frame)
+        if self.at_first_gt_frame is False:
+            self.get_average_color(image, frame)
         self.this_frame_img = image.copy()
         self.masked_img, self.gt_board, self.irl_board = self.extract_gt_board(
             image, self.gt_board_loc, self.irl_board_loc
@@ -248,7 +318,6 @@ class VideoBoardExtractor:
                         WHITE,
                         thickness=1,
                     )
-
                     self.irl_video.write(self.irl_board)
 
             return succeed
@@ -264,3 +333,7 @@ class VideoBoardExtractor:
             return img, gt_board, irl_board
         img[top:bottom, left:right, :] = self.first_frame_img[top:bottom, left:right, :]
         return img, gt_board, irl_board
+
+
+if __name__ == "__main__":
+    pass
